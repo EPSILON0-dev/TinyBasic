@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -6,14 +5,20 @@
 #include <string.h>
 #include <ctype.h>
 
-#define CODE_MEMORY_SIZE 8192
-#define EXPR_MAX_TOKENS 64
-#define MAX_LINENUM 10000
-#define LIST_DEBUG 0
-#define EXPR_DEBUG 0
+#define CODE_MEMORY_SIZE  8192
+#define EXPR_MAX_TOKENS   64
+#define MAX_LINENUM       10000
+#define LIST_DEBUG        0
+#define EXPR_DEBUG        0
+#define POKE_PEEK         0
+#define FILE_IO           0
 
 typedef uint16_t line_t;
 typedef int32_t var_t;
+typedef size_t peek_t;
+
+#define PUTCHAR(x) (putchar(x))
+#define GETCHAR() (getchar())
 
 /****************************************************************************/
 
@@ -24,11 +29,21 @@ const char *kwd_print  = "PRINT";
 const char *kwd_goto   = "GOTO";
 const char *kwd_if     = "IF";
 const char *kwd_then   = "THEN";
+const char *kwd_input  = "INPUT";
 const char *kwd_rem    = "REM";
 const char *kwd_run    = "RUN";
 const char *kwd_clear  = "CLEAR";
 const char *kwd_memory = "MEMORY";
 const char *kwd_end    = "END";
+const char *kwd_new    = "NEW";
+#if POKE_PEEK == 1
+const char *kwd_poke   = "POKE";
+const char *kwd_peek   = "PEEK";
+#endif
+#if FILE_IO == 1
+const char *kwd_save   = "SAVE";
+const char *kwd_load   = "LOAD";
+#endif
 
 /****************************************************************************/
 
@@ -44,6 +59,7 @@ enum EExprTokens {
   ET_AND,
   ET_OR,
   ET_XOR,
+  ET_INVERT,
   ET_SUBEXPR_OPEN,
   ET_SUBEXPR_CLOSE,
   ET_SUBEXPR = 4
@@ -80,14 +96,20 @@ static size_t codemem_end; // The byte after the last saved line
 static size_t newline_ind; // The first byte of the new line
 static size_t newline_end; // The byte after the new line
 
+// Current line for when the code is executing
+static line_t current_line;
+
 /****************************************************************************/
+
+// Printing utilities
+void print_string(const char *string);
 
 // Command handling utilities
 static inline void skip_spaces(size_t *index);
-var_t get_literal_number(size_t ind);
+var_t get_literal_number(size_t index, bool *error);
 
 // Code memory handling
-line_t get_line_num(size_t ind);
+line_t get_line_num(size_t index);
 size_t get_line_index(line_t linenum);
 size_t get_line_next_index(line_t linenum);
 void codemem_shift_left(size_t index, size_t length, size_t amount);
@@ -107,17 +129,35 @@ void expr_erase(size_t index, size_t length);
 
 // Command execution utilities
 bool command_compare(const char * restrict command, size_t index);
+line_t syntax_error(const char *error, size_t index);
 line_t execute_command(size_t index);
-void handle_let(size_t index, bool *error);
-void handle_print(size_t index, bool *error);
-size_t handle_if(size_t index);
+line_t handle_let(size_t index);
+line_t handle_print(size_t index);
+line_t handle_if(size_t index);
 line_t handle_goto(size_t index);
+line_t handle_input(size_t index);
 void handle_list(void);
+void handle_new(void);
 void handle_run(void);
+#if POKE_PEEK == 1
+line_t handle_poke(size_t index);
+line_t handle_peek(size_t index);
+#endif
 
 // Main functions
 bool handle_shell(void);
 void execute_newline(void);
+
+/****************************************************************************/
+
+/**
+ * Print out a string
+ */
+void print_string(const char *string)
+{
+  while (*string)
+    PUTCHAR(*(string++));
+}
 
 /****************************************************************************/
 
@@ -133,21 +173,66 @@ static inline void skip_spaces(size_t *index)
 /**
  * Get the number from the literal pointed to by index
  */
-var_t get_literal_number(size_t ind)
+var_t get_literal_number(size_t index, bool *error)
 {
-  bool inverted = false;
-  if (codemem[ind] == '-') {
-    ind++;
-    inverted = true;
-  }
-
   var_t result = 0;
-  while (isdigit(codemem[ind])) {
-    result *= 10;
-    result += codemem[ind++] - '0';
+  size_t length = 0;
+  while (isalnum(codemem[index + length]) && index + length < newline_end)
+    length++;
+
+  // Do the binary
+  if (length > 2 && codemem[index] == '0' && codemem[index + 1] == 'b') {
+    index += 2;
+    while (isdigit(codemem[index])) {
+      char digit = codemem[index++] - '0';
+      if (digit > 1) {
+        *error = true;
+        return 0;
+      }
+      result *= 2;
+      result += digit;
+    }
   }
 
-  return (inverted) ? -result : result;
+  // Do the hex
+  else if (length > 2 && codemem[index] == '0' && codemem[index + 1] == 'x') {
+    index += 2;
+    while (isxdigit(codemem[index])) {
+      char digit = toupper(codemem[index++]);
+      digit -= (digit > '9') ? 'A' - 10 : '0';
+      if (digit > 16) {
+        *error = true;
+        return 0;
+      }
+      result *= 16;
+      result += digit;
+    }
+  }
+
+  // Do the octal
+  else if (length > 1 && codemem[index] == '0') {
+    index++;
+    while (isdigit(codemem[index])) {
+      char digit = codemem[index++] - '0';
+      if (digit > 7) {
+        *error = true;
+        return 0;
+      }
+      result *= 8;
+      result += digit;
+    }
+  }
+
+  // Do the decimal
+  else {
+    while (isdigit(codemem[index])) {
+      result *= 10;
+      result += codemem[index++] - '0';
+    }
+  }
+
+  *error = false;
+  return result;
 }
 
 /****************************************************************************/
@@ -155,12 +240,12 @@ var_t get_literal_number(size_t ind)
 /**
  * Get the line number from the codemem at the given index
  */
-line_t get_line_num(size_t ind)
+line_t get_line_num(size_t index)
 {
-  const var_t linenum_raw = get_literal_number(ind);
-  if (linenum_raw <= 0 || linenum_raw >= MAX_LINENUM) {
+  bool error;
+  const var_t linenum_raw = get_literal_number(index, &error);
+  if (linenum_raw <= 0 || linenum_raw >= MAX_LINENUM || error)
     return 0;
-  }
   return linenum_raw;
 }
 
@@ -173,7 +258,6 @@ size_t get_line_index(line_t linenum)
   while (index < codemem_end) {
     if (*(line_t*)(&codemem[index]) == linenum)
       break;
-
     index += sizeof(line_t);
     while (codemem[index++] != '\0') {
       if (index >= codemem_end)
@@ -193,7 +277,6 @@ size_t get_potential_line_index(line_t linenum)
   while (index < codemem_end) {
     if (*(line_t*)(&codemem[index]) >= linenum)
       break;
-
     index += sizeof(line_t);
     while (codemem[index++] != '\0') {
       if (index >= codemem_end)
@@ -230,13 +313,13 @@ void store_newline(size_t ind)
   // Get the line num
   const line_t linenum = get_line_num(ind);
   if (linenum == 0) {
-    printf("Invalid line number");
+    print_string("Invalid line number");
     newline_end = newline_ind;
     return;
   }
 
   // Get the index after the number
-  while (isdigit(codemem[ind]))
+  while (isalnum(codemem[ind]) && ind < newline_end)
     ind++;
   skip_spaces(&ind);
 
@@ -295,12 +378,6 @@ var_t expr_solve(size_t index, size_t length, bool *error)
   if (expr_token_count == EXPR_MAX_TOKENS)
     goto handle_expr_error;
 
-  #if EXPR_DEBUG == 1
-  for (int i = 0; i < expr_token_count; i++)
-    printf("Type %d, Precedence %d, Value %d\n", expr_tokens[i].type,
-      expr_tokens[i].precedence, expr_tokens[i].value);
-  #endif
-
   if (expr_reduce_unary())
     goto handle_expr_error;
 
@@ -309,18 +386,24 @@ var_t expr_solve(size_t index, size_t length, bool *error)
 
   expr_filter_brackets();
 
+  #if EXPR_DEBUG == 1
+  for (int i = 0; i < expr_token_count; i++)
+    printf("Type %d, Precedence %2d, Value 0x%lx (%ld)\n", expr_tokens[i].type,
+      expr_tokens[i].precedence, expr_tokens[i].value, expr_tokens[i].value); // NOLINT
+  #endif
+
   // Solve the expression
   while (expr_token_count > 1)
     if (expr_reduce())
       goto handle_expr_error;
 
-  // DEBUG
+  // Return the result
   *error = 0;
   return expr_tokens[0].value;
 
   // Syntax error
   handle_expr_error:
-  printf("Syntax error in expression: %s\n", &codemem[index]);
+  syntax_error("Failed to evaluate expression", index);
   *error = 1;
   return 0;
 }
@@ -346,9 +429,14 @@ void expr_tokenize(size_t index, size_t length)
 
     // Check for the literals
     if (isdigit(codemem[index])) {
+      bool error;
       tok.type = ET_VALUE;
-      tok.value = get_literal_number(index);
-      while (isdigit(codemem[index]))
+      tok.value = get_literal_number(index, &error);
+      if (error) {
+        expr_token_count = EXPR_MAX_TOKENS;
+        break;
+      }
+      while (isalnum(codemem[index]))
         index++;
       index--;
     }
@@ -397,6 +485,10 @@ void expr_tokenize(size_t index, size_t length)
         tok.type = ET_XOR;
         break;
 
+      case '!':
+        tok.type = ET_INVERT;
+        break;
+
       case '(':
         tok.type = ET_SUBEXPR_OPEN;
         break;
@@ -428,7 +520,7 @@ bool expr_calc_precedence(void)
       case ET_AND:
       case ET_OR:
       case ET_XOR:
-        expr_tokens[i].precedence = base_precedence + 2;
+        expr_tokens[i].precedence = base_precedence + 1;
         break;
 
       case ET_ADD:
@@ -589,6 +681,11 @@ bool expr_reduce_unary(void)
         return 1;
       expr_tokens[i].value *= -1;
       expr_erase(i - 1, 1);
+    } else if (expr_tokens[i - 1].type == ET_INVERT) {
+      if (expr_tokens[i].type != ET_VALUE)
+        return 1;
+      expr_tokens[i].value = ~expr_tokens[i].value;
+      expr_erase(i - 1, 1);
     }
   }
 
@@ -637,20 +734,38 @@ bool command_compare(const char * restrict command, size_t index)
 }
 
 /**
+ * Show the error
+ */
+line_t syntax_error(const char *error, size_t index)
+{
+  if (current_line) {
+    printf("Error at line %d: %s\n%d %s\n", current_line, error, current_line, &codemem[index]);
+  } else {
+    printf("Error: %s\n%s\n", error, &codemem[index]);
+  }
+  return MAX_LINENUM;
+}
+
+/**
  * Detect the command and call the appropriate method on it and return next line address
  */
 line_t execute_command(size_t index)
 {
-  bool error;
+  bool error = false;
 
   // Execute "LET"
   if (command_compare(kwd_let, index)) {
-    handle_let(index + strlen(kwd_list), &error);
+    return handle_let(index + strlen(kwd_list));
+  }
+
+  // Execute "LET" without the keyword
+  else if (isalpha(codemem[index]) && (codemem[index + 1] == ' ' || codemem[index + 1] == '=')) {
+    return handle_let(index);
   }
 
   // Execute "PRINT"
   else if (command_compare(kwd_print, index)) {
-    handle_print(index, &error);
+    return handle_print(index);
   }
 
   // Execute "GOTO"
@@ -661,6 +776,23 @@ line_t execute_command(size_t index)
   // Execute "IF"
   else if (command_compare(kwd_if, index)) {
     return handle_if(index);
+  }
+
+  #if POKE_PEEK == 1
+  // Execute "POKE"
+  else if (command_compare(kwd_poke, index)) {
+    return handle_poke(index);
+  }
+
+  // Execute "PEEK"
+  else if (command_compare(kwd_peek, index)) {
+    return handle_peek(index);
+  }
+  #endif
+
+  // Execute "INPUT"
+  else if (command_compare(kwd_input, index)) {
+    handle_input(index);
   }
 
   // Execute "REM" (reminder/comment command)
@@ -688,20 +820,19 @@ line_t execute_command(size_t index)
     handle_list();
   }
 
+  // Execute "NEW"
+  else if (command_compare(kwd_new, index)) {
+    handle_new();
+  }
+
   // Execute "MEMORY"
   else if (command_compare(kwd_memory, index)) {
     printf("%d bytes free\n", (int)(CODE_MEMORY_SIZE - codemem_end));
   }
 
-  // Execute "LET" without the keyword
-  else if (isalpha(codemem[index]) && (codemem[index + 1] == ' ' || codemem[index + 1] == '=')) {
-    handle_let(index, &error);
-  }
-
   // If command wasn't recognized show an error and return
   else {
-    printf("Unknown command:\n%s\n", &codemem[index]);
-    return MAX_LINENUM;
+    return syntax_error("Unknown command", index);
   }
 
   return (error) ? MAX_LINENUM : 0;
@@ -710,7 +841,7 @@ line_t execute_command(size_t index)
 /**
  * Print the string, or strings if separated by ':'
  */
-void handle_print(size_t index, bool *error)
+line_t handle_print(size_t index)
 {
   const size_t initial_index = index;
   index += strlen(kwd_print);
@@ -718,6 +849,7 @@ void handle_print(size_t index, bool *error)
 
   while (1) {
 
+    // Disable linefeed if the line ended with the concat operator
     if (codemem[index] == '\0') {
       linefeed = false;
       break;
@@ -732,7 +864,7 @@ void handle_print(size_t index, bool *error)
       size_t len;
       for (len = 0; codemem[index + len + 1] != '"'; len++)
         if (codemem[index + len + 1] == '\0')
-          goto handle_print_err;
+          return syntax_error("Unclosed string", initial_index);
 
       // Print the string
       for (size_t i = 1; i <= len; i++)
@@ -756,13 +888,14 @@ void handle_print(size_t index, bool *error)
         length++;
 
       // Get the expression value and print it out
-      const var_t expr_value = expr_solve(index, length, error);
-      if (*error)
-        return;
+      bool error;
+      const var_t expr_value = expr_solve(index, length, &error);
+      if (error)
+        return MAX_LINENUM;
 
       // Print the expression result
       // NOLINTNEXTLINE
-      printf("%ld", expr_value);
+      printf("%ld", (int64_t)expr_value);
 
       // Continue while there are more expressions or strings
       index += length;
@@ -776,39 +909,32 @@ void handle_print(size_t index, bool *error)
 
   // Show an error if there's something after the string
   if (codemem[index] != '\0')
-    goto handle_print_err;
+    return syntax_error("Invalid data after print statement", initial_index);
 
   // Print the LF and return
   if (linefeed)
     printf("\n");
-  *error = false;
-  return;
-
-  // Syntax error print
-  handle_print_err: (void)0;
-  printf("\nSyntax error:\n%s\n", &codemem[initial_index]);
-  *error = true;
-  return;
+  return 0;
 }
 
 /**
  * Handle let command, solve the expression and do the assignment
  */
-void handle_let(size_t index, bool *error)
+line_t handle_let(size_t index)
 {
   const size_t initial_index = index;
 
   // Get the target variable
   skip_spaces(&index);
   if (!isalpha(codemem[index]))
-    goto handle_let_err;
+    return syntax_error("Invalid target variable", initial_index);
   const size_t variable = toupper(codemem[index]) - 'A';
 
   // Check for the equal symbol sanity
   index++;
   skip_spaces(&index);
   if (codemem[index] != '=')
-    goto handle_let_err;
+    return syntax_error("Expected '=' token after the target variable", initial_index);
 
   // Get the expression length
   index++;
@@ -817,18 +943,12 @@ void handle_let(size_t index, bool *error)
     length++;
 
   // Solve the expression and assign the value
-  const var_t expr_value = expr_solve(index, length, error);
-  if (*error)
-    return;
+  bool error;
+  const var_t expr_value = expr_solve(index, length, &error);
+  if (error)
+    return MAX_LINENUM;
   variables[variable] = expr_value;
-  *error = false;
-  return;
-
-  // Syntax error print
-  handle_let_err: (void)0;
-  printf("\nSyntax error:\n%s\n", &codemem[initial_index]);
-  *error = true;
-  return;
+  return 0;
 }
 
 /**
@@ -856,23 +976,19 @@ void handle_list(void)
 line_t handle_goto(size_t index)
 {
   const size_t initial_index = index;
+  bool error;
   index += strlen(kwd_goto);
   skip_spaces(&index);
-  const line_t linenum = get_literal_number(index);
-  if (linenum <= 0 || linenum >= MAX_LINENUM)
-    goto handle_goto_err;
+  const line_t linenum = get_literal_number(index, &error);
+  if (linenum <= 0 || linenum >= MAX_LINENUM || error)
+    return syntax_error("Invalid target line number", initial_index);
   return linenum;
-
-  // Syntax error print
-  handle_goto_err: (void)0;
-  printf("\nSyntax error:\n%s\n", &codemem[initial_index]);
-  return MAX_LINENUM;
 }
 
 /**
  * Check the condition and execute the command if it's met
  */
-size_t handle_if(size_t index)
+line_t handle_if(size_t index)
 {
   const size_t initial_index = index;
   bool error;
@@ -888,7 +1004,7 @@ size_t handle_if(size_t index)
     length++;
   }
   if (codemem[index + length] == '\0')
-    goto handle_if_err;
+    return syntax_error("Expected 2 expressions for comparison", initial_index);
   var_t expr_left_value = expr_solve(index, length, &error);
   if (error)
     return MAX_LINENUM;
@@ -911,14 +1027,14 @@ size_t handle_if(size_t index)
     compare_operation = CO_EQUAL;
     index++;
   } else {
-    goto handle_if_err;
+    return syntax_error("Invalid compare operation", initial_index);
   }
 
   // Get the second expression
   length = 0;
   while (1) {
     if (codemem[index + length] == '\0')
-      goto handle_if_err;
+      return syntax_error("Expected second expression followed by 'THEN' token", initial_index);
     if (command_compare(kwd_then, index + length))
       break;
     length++;
@@ -952,13 +1068,141 @@ size_t handle_if(size_t index)
   } else {
     return 0;
   }
+}
 
-  // Syntax error print
-  handle_if_err: (void)0;
-  const line_t linenum = (initial_index == codemem_end) ? 0 :
-    *(line_t*)(&codemem[initial_index - 2]);
-  printf("\nSyntax error at line %d:\n%s\n", linenum, &codemem[initial_index]);
-  return MAX_LINENUM;
+/**
+ * Handle the input command
+ */
+line_t handle_input(size_t index)
+{
+  const size_t initial_index = index;
+
+  // Get the target variable
+  index += strlen(kwd_input);
+  while (isblank(codemem[index]))
+    index++;
+
+  if (codemem[index] == '\0')
+    return syntax_error("Expected target variable", initial_index);
+  if (!isalpha(codemem[index]) || codemem[index + 1] != '\0')
+    return syntax_error("Expected target variable", initial_index);
+
+  const size_t variable = toupper(codemem[index]) - 'A';
+
+  // Get and exaluate the expression
+  size_t expr_length = 0;
+  while (1) {
+    const char chr = getchar();
+
+    if (chr == '\b') {
+      if (expr_length)
+        expr_length--;
+    }
+
+    else if (chr == '\n') {
+      break;
+    }
+
+    else if (newline_end + expr_length < CODE_MEMORY_SIZE) {
+      codemem[newline_end + expr_length++] = chr;
+    }
+  }
+  codemem[newline_end + expr_length] = '\0';
+
+  bool error;
+  var_t expr_value = expr_solve(newline_end, expr_length, &error);
+  if (error)
+    return MAX_LINENUM;
+
+  variables[variable] = expr_value;
+  return 0;
+}
+
+#if POKE_PEEK == 1
+/**
+ * Poke in memory, change some values
+ */
+line_t handle_poke(size_t index)
+{
+  bool error;
+  const size_t initial_index = index;
+  index += strlen(kwd_poke);
+  skip_spaces(&index);
+
+  // Get the first expression
+  size_t length = 0;
+  while (codemem[index + length] != '\0' && codemem[index + length] != ',')
+    length++;
+  if (codemem[index + length] == '\0')
+    return syntax_error("Expected 2 expressions", initial_index);
+  size_t address = expr_solve(index, length, &error);
+  if (error)
+    return MAX_LINENUM;
+
+  // Get the second expression
+  index += length + 1;
+  length = 0;
+  while (codemem[index + length] != '\0')
+    length++;
+  peek_t value = expr_solve(index, length, &error);
+  if (error)
+    return MAX_LINENUM;
+
+  // Do the memory operation
+  *(peek_t*)(address) = value;
+
+  return 0;
+}
+
+/**
+ * Peek into the memory, get some values
+ */
+line_t handle_peek(size_t index)
+{
+  bool error;
+  const size_t initial_index = index;
+  index += strlen(kwd_poke);
+  skip_spaces(&index);
+
+  // Get the first expression
+  size_t length = 0;
+  while (codemem[index + length] != '\0' && codemem[index + length] != ',')
+    length++;
+  if (codemem[index + length] == '\0')
+    return syntax_error("Expected 2 expressions", initial_index);
+  size_t address = expr_solve(index, length, &error);
+  if (error)
+    return MAX_LINENUM;
+
+  // Get the variable target
+  index += length + 1;
+  skip_spaces(&index);
+  if (!isalpha(codemem[index]) || codemem[index + 1] != '\0')
+    return syntax_error("Expected targer variable", initial_index);
+  size_t variable = toupper(codemem[index]) - 'A';
+
+  // Do the memory operation
+  variables[variable] = (var_t)(*(peek_t*)(address));
+  return 0;
+}
+#endif
+
+/**
+ * Ask for confirmation and if confirmed clear the memory
+ */
+void handle_new(void)
+{
+  printf("Really want to do do this? [Y/n]:");
+  if (toupper(getchar()) == 'Y') {
+    printf("\nI did as you said\n");
+    for (int i = 0; i < CODE_MEMORY_SIZE; i++)
+      codemem[i] = '\0';
+    codemem_end = 0;
+    newline_ind = 0;
+    newline_end = 0;
+  } else {
+    printf("\n");
+  }
 }
 
 /**
@@ -973,21 +1217,23 @@ void handle_run(void)
   }
 
   size_t index = sizeof(line_t);
+  current_line = *(line_t*)(&codemem[0]);
   while (1) {
 
     // Execute a line
     line_t nextline = execute_command(index);
+    current_line = nextline;
 
     // Exit if error occured
     if (nextline == MAX_LINENUM) {
-      return;
+      break;
     }
 
     // Find the next line index if not given
     else if (!nextline) {
       index += strlen(&codemem[index]) + sizeof(line_t) + 1;
       if (index >= codemem_end)
-        return;
+        break;
     }
 
     // Find the line index based on the line number
@@ -995,10 +1241,12 @@ void handle_run(void)
       index = get_line_index(nextline);
       if (index == codemem_end) {
         printf("Line %d not found.\n", nextline);
-        return;
+        break;
       }
     }
   }
+
+  current_line = 0;
 }
 
 /****************************************************************************/
@@ -1064,6 +1312,7 @@ int main(void)
   newline_ind = 0;
   newline_end = 0;
   expr_token_count = 0;
+  current_line = 0;
 
   for (int i = 0; i < 26; i++)
     variables[i] = 0;
