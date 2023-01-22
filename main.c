@@ -15,17 +15,18 @@
 #define CODE_MEMORY_SIZE  8192
 #define EXPR_MAX_TOKENS   64
 #define MAX_LINENUM       10000
-#define POKE_PEEK         0
+#define POKE_PEEK         1
 #define FILE_IO           1
-#define IO_KILL           1
+#define IO_KILL           0
 
-typedef uint16_t line_t;
-typedef int32_t var_t;
-typedef size_t peek_t;
+typedef uint16_t          line_t;
+typedef int32_t           var_t;
+typedef size_t            peek_t;
 
-#define IO_INIT() ((void)0)
-#define PUTCHAR(x) (putchar(x))
-#define GETCHAR() (getchar())
+#define IO_INIT()         ((void)0)
+#define PUTCHAR(x)        (putchar(x))
+#define GETCHAR()         (getchar())
+#define IO_CHECK()        (false)
 
 /****************************************************************************/
 
@@ -51,6 +52,8 @@ const char *kwd_then   = "THEN";
 #if POKE_PEEK == 1
 const char *kwd_peek   = "PEEK";
 const char *kwd_poke   = "POKE";
+const char *kwd_peekb  = "PEEKB";
+const char *kwd_pokeb  = "POKEB";
 #endif
 #if FILE_IO == 1
 const char *kwd_load   = "LOAD";
@@ -154,8 +157,8 @@ void handle_list(void);
 void handle_new(void);
 void handle_run(void);
 #if POKE_PEEK == 1
-line_t handle_poke(size_t index);
-line_t handle_peek(size_t index);
+line_t handle_poke(size_t index, bool byte_size);
+line_t handle_peek(size_t index, bool byte_size);
 #endif
 #if FILE_IO == 1
 void handle_save(size_t index);
@@ -844,12 +847,22 @@ line_t execute_command(size_t index)
   #if POKE_PEEK == 1
   // Execute "POKE"
   else if (command_compare(kwd_poke, index)) {
-    return handle_poke(index);
+    return handle_poke(index, false);
   }
 
   // Execute "PEEK"
   else if (command_compare(kwd_peek, index)) {
-    return handle_peek(index);
+    return handle_peek(index, false);
+  }
+
+  // Execute "POKEB"
+  else if (command_compare(kwd_poke, index)) {
+    return handle_poke(index, true);
+  }
+
+  // Execute "PEEKB"
+  else if (command_compare(kwd_peek, index)) {
+    return handle_peek(index, true);
   }
   #endif
 
@@ -1222,11 +1235,11 @@ line_t handle_input(size_t index)
 /**
  * Poke in memory, change some values
  */
-line_t handle_poke(size_t index)
+line_t handle_poke(size_t index, bool byte_size)
 {
   bool error;
   const size_t initial_index = index;
-  index += strlen(kwd_poke);
+  index += (byte_size) ? strlen(kwd_peekb) : strlen(kwd_peek);
   skip_spaces(&index);
 
   // Get the first expression
@@ -1234,7 +1247,7 @@ line_t handle_poke(size_t index)
   while (codemem[index + length] != '\0' && codemem[index + length] != ',')
     length++;
   if (codemem[index + length] == '\0')
-    return syntax_error("Expected 2 expressions", initial_index);
+    return print_error("Expected 2 expressions", initial_index);
   size_t address = expr_solve(index, length, &error);
   if (error)
     return MAX_LINENUM;
@@ -1249,7 +1262,11 @@ line_t handle_poke(size_t index)
     return MAX_LINENUM;
 
   // Do the memory operation
-  *(peek_t*)(address) = value;
+  if (byte_size) {
+    *(uint8_t*)(address) = (uint8_t)value;
+  } else {
+    *(peek_t*)(address) = (peek_t)value;
+  }
 
   return 0;
 }
@@ -1257,11 +1274,11 @@ line_t handle_poke(size_t index)
 /**
  * Peek into the memory, get some values
  */
-line_t handle_peek(size_t index)
+line_t handle_peek(size_t index, bool byte_size)
 {
   bool error;
   const size_t initial_index = index;
-  index += strlen(kwd_poke);
+  index += (byte_size) ? strlen(kwd_pokeb) : strlen(kwd_poke);
   skip_spaces(&index);
 
   // Get the first expression
@@ -1269,7 +1286,7 @@ line_t handle_peek(size_t index)
   while (codemem[index + length] != '\0' && codemem[index + length] != ',')
     length++;
   if (codemem[index + length] == '\0')
-    return syntax_error("Expected 2 expressions", initial_index);
+    return print_error("Expected 2 expressions", initial_index);
   size_t address = expr_solve(index, length, &error);
   if (error)
     return MAX_LINENUM;
@@ -1278,11 +1295,12 @@ line_t handle_peek(size_t index)
   index += length + 1;
   skip_spaces(&index);
   if (!isalpha(codemem[index]) || codemem[index + 1] != '\0')
-    return syntax_error("Expected targer variable", initial_index);
+    return print_error("Expected targer variable", initial_index);
   size_t variable = toupper(codemem[index]) - 'A';
 
   // Do the memory operation
-  variables[variable] = (var_t)(*(peek_t*)(address));
+  variables[variable] = (byte_size) ?
+    (var_t)(*(uint8_t*)(address)) : (var_t)(*(peek_t*)(address));
   return 0;
 }
 #endif
@@ -1411,6 +1429,11 @@ void handle_run(void)
   size_t index = sizeof(line_t);
   current_line = *(line_t*)(&codemem[0]);
   while (1) {
+
+    #if IO_KILL == 1
+    if (IO_CHECK())
+      break;
+    #endif
 
     // Execute a line
     line_t nextline = execute_command(index);

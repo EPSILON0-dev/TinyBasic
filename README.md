@@ -1,6 +1,6 @@
 # TinyBasic
 
-## This is a simple TinyBASIC interpreter designed for use in testing microcontroller peripherals.
+## This is a simple TinyBASIC interpreter designed for use on microcontrollers.
 
 Language supports the most basic commands like `LET`, `PRINT`, `GOTO`, `IF` and `INPUT`, 26 single-letter variables are available to the programmer, despite these limitations the language is Turing complete allowing to create (almost) any simple program.
 
@@ -8,8 +8,13 @@ Code memory space, expression tokens limit, maximum line number and shell IO com
 
 `POKE` and `PEEK` command can be disabled when used on PC, as they always cause segmentation fault, and `SAVE` and `LOAD` can be disabled when used on a MCU that doesn't have access to file system.
 
+In case infinite loop occures there is a way to kill the execution by sending any key to the console. Execution is stopped and there is no problem with loosing progress having to reset the MCU. (`KILL_IO` must be enabled.)
+
+---
+
 ## List of the supported commands:
-Keywords are case-insensitive.
+Keywords and variable names are case-insensitive.
+###### BASIC commands
 - `LET <variable> = <expression>` <br>Assigns the result of an expression to the given variable, `LET` keyword isn't necessary and format `<var> = <expr>` will also be understood.
 - `PRINT <"string"> : <expression>` <br>Prints out strings and expression results to the console, `:` token can be used as a separator to for example put a value after a string, leaving the separator token at the end of the line disables the linefeed that would have been sent at the end of the line.
 - `GOTO <line number>` <br>This command jumps to the given line number.
@@ -21,10 +26,16 @@ Keywords are case-insensitive.
 - `MEMORY` <br>Shows how much code memory is left.
 - `RUN` <br>Starts the program from the first line.
 - `NEW` <br>Clears the code memory after confirmation.
-- `POKE <address expression>, <value expression>` <br>(POKE_PEEK) Sets the memory at the given address to the given value
-- `PEEK <address expression>, <variable>` <br>(POKE_PEEK) Gets the memory from the given address and stores it in the given variable.
-- `SAVE <filename>` <br>(FILE_IO) Saves memory contents.
-- `LOAD <filename>` <br>(FILE_IO) Loads memory contents.
+###### POKE_PEEK commands
+- `POKE <address expression>, <value expression>` <br>Sets the memory at the given address to the given value
+- `PEEK <address expression>, <variable>` <br>Gets the memory from the given address and stores it in the given variable.
+- `POKEB <address expression>, <value expression>` <br>Same as `POKE` but only accesses `uint8_t` instead of `peek_t`
+- `PEEKB <address expression>, <variable>` <br>Same as `POKE` but only accesses `uint8_t` instead of `peek_t`
+###### FILE_IO commands
+- `SAVE <filename>` <br>Saves memory contents.
+- `LOAD <filename>` <br>Loads memory contents.
+
+---
 
 ## Expression solving
 ##### Supported operations
@@ -46,6 +57,8 @@ Language interpreter contains a simple expression solver supporting basic intege
 | Octal       | Value starting with '0' prefix            | `033`, `0377`, `0105`, `00`         |
 | Binary      | Value starting with '0b' prefix           | `0b0110`, `0b1001`, `0b01010101`    |
 
+---
+
 ## Configuration
 
 ##### Defines
@@ -54,8 +67,7 @@ Language interpreter contains a simple expression solver supporting basic intege
 - `MAX_LINUENUM` - Maximum valid line number (not including MAX_LINENUM).
 - `POKE_PEEK` - Enable `POKE` and `PEEK` commands.
 - `FILE_IO` - Enable `SAVE` and `LOAD` commands.
-- `LIST_DEBUG` - Debug stuff.
-- `EXPR_DEBUG` - Debug stuff.
+- `IO_KILL` - Enable breaking the execution if new characters were received during execution.
 
 ##### Data types
 - `line_t` - Format in which line number is stored.
@@ -66,31 +78,34 @@ Language interpreter contains a simple expression solver supporting basic intege
 - `IO_INIT` - Called at the start of `main()` starts up the IO device.
 - `PUTCHAR(x)` - Prints the `x` character to the IO device.
 - `GETCHAR()` - Return character from the IO device.
+- `IO_CHECK()` - Returns if there are any new characters in IO (used for IO_KILL).
 
-### Example configs
+#### Example configs
 
-##### PC
+###### PC
 ```c
 #define CODE_MEMORY_SIZE  8192
 #define EXPR_MAX_TOKENS   64
 #define MAX_LINENUM       10000
 #define POKE_PEEK         0
 #define FILE_IO           1
-#define LIST_DEBUG        0
-#define EXPR_DEBUG        0
+#define IO_KILL           0
 
-typedef uint16_t line_t;
-typedef int32_t var_t;
-typedef size_t peek_t;
+typedef uint16_t          line_t;
+typedef int32_t           var_t;
+typedef size_t            peek_t;
 
-#define IO_INIT() ((void)0)
-#define PUTCHAR(x) (putchar(x))
-#define GETCHAR() (getchar())
+#define IO_INIT()         ((void)0)
+#define PUTCHAR(x)        (putchar(x))
+#define GETCHAR()         (getchar())
+#define IO_CHECK()        (false)
 ```
+
+---
 
 ## Example programs
 
-##### Primes generator
+###### Primes generator
 ```basic
 10 REM Primes generator, get all primes up to max prime
 20 PRINT "Enter max prime: ":
