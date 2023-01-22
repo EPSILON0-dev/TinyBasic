@@ -1,6 +1,6 @@
 .PHONY: build
 build:
-	gcc -o tinybasic main.c -O2 -g
+	gcc -o tinybasic main.c -O0 -g
 
 .PHONY: clean
 clean:

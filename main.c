@@ -1,3 +1,10 @@
+/**
+ * Copyright Lukasz Forenc 2023
+ *
+ * File: main.c
+ *
+ */
+#include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -8,41 +15,46 @@
 #define CODE_MEMORY_SIZE  8192
 #define EXPR_MAX_TOKENS   64
 #define MAX_LINENUM       10000
-#define LIST_DEBUG        0
-#define EXPR_DEBUG        0
 #define POKE_PEEK         0
-#define FILE_IO           0
+#define FILE_IO           1
+#define IO_KILL           1
 
 typedef uint16_t line_t;
 typedef int32_t var_t;
 typedef size_t peek_t;
 
+#define IO_INIT() ((void)0)
 #define PUTCHAR(x) (putchar(x))
 #define GETCHAR() (getchar())
 
 /****************************************************************************/
 
+#define LIST_DEBUG        0
+#define EXPR_DEBUG        0
+
+/****************************************************************************/
+
 // Command constants
-const char *kwd_let    = "LET";
-const char *kwd_list   = "LIST";
-const char *kwd_print  = "PRINT";
+const char *kwd_clear  = "CLEAR";
+const char *kwd_end    = "END";
 const char *kwd_goto   = "GOTO";
 const char *kwd_if     = "IF";
-const char *kwd_then   = "THEN";
 const char *kwd_input  = "INPUT";
+const char *kwd_let    = "LET";
+const char *kwd_list   = "LIST";
+const char *kwd_memory = "MEMORY";
+const char *kwd_new    = "NEW";
+const char *kwd_print  = "PRINT";
 const char *kwd_rem    = "REM";
 const char *kwd_run    = "RUN";
-const char *kwd_clear  = "CLEAR";
-const char *kwd_memory = "MEMORY";
-const char *kwd_end    = "END";
-const char *kwd_new    = "NEW";
+const char *kwd_then   = "THEN";
 #if POKE_PEEK == 1
-const char *kwd_poke   = "POKE";
 const char *kwd_peek   = "PEEK";
+const char *kwd_poke   = "POKE";
 #endif
 #if FILE_IO == 1
-const char *kwd_save   = "SAVE";
 const char *kwd_load   = "LOAD";
+const char *kwd_save   = "SAVE";
 #endif
 
 /****************************************************************************/
@@ -103,6 +115,8 @@ static line_t current_line;
 
 // Printing utilities
 void print_string(const char *string);
+void print_unsigned(uint64_t value);
+void print_signed(int64_t value);
 
 // Command handling utilities
 static inline void skip_spaces(size_t *index);
@@ -129,7 +143,7 @@ void expr_erase(size_t index, size_t length);
 
 // Command execution utilities
 bool command_compare(const char * restrict command, size_t index);
-line_t syntax_error(const char *error, size_t index);
+line_t print_error(const char * restrict error, size_t index);
 line_t execute_command(size_t index);
 line_t handle_let(size_t index);
 line_t handle_print(size_t index);
@@ -142,6 +156,10 @@ void handle_run(void);
 #if POKE_PEEK == 1
 line_t handle_poke(size_t index);
 line_t handle_peek(size_t index);
+#endif
+#if FILE_IO == 1
+void handle_save(size_t index);
+void handle_load(size_t index);
 #endif
 
 // Main functions
@@ -157,6 +175,39 @@ void print_string(const char *string)
 {
   while (*string)
     PUTCHAR(*(string++));
+}
+
+/**
+ * Print out an unsigned number
+ */
+void print_unsigned(uint64_t value)
+{
+  size_t length = 1;
+  uint64_t tvalue = value;
+  while (tvalue > 9) {
+    length++;
+    tvalue /= 10;
+  }
+
+  while (length--) {
+    tvalue = value;
+    for (size_t i = 0; i < length; i++)
+      tvalue /= 10;
+    tvalue %= 10;
+    PUTCHAR(tvalue + '0');
+  }
+}
+
+/**
+ * Print out a signed number
+ */
+void print_signed(int64_t value)
+{
+  if (value < 0) {
+    PUTCHAR('-');
+    value = -value;
+  }
+  print_unsigned(value);
 }
 
 /****************************************************************************/
@@ -403,7 +454,7 @@ var_t expr_solve(size_t index, size_t length, bool *error)
 
   // Syntax error
   handle_expr_error:
-  syntax_error("Failed to evaluate expression", index);
+  print_error("Failed to evaluate expression", index);
   *error = 1;
   return 0;
 }
@@ -736,12 +787,24 @@ bool command_compare(const char * restrict command, size_t index)
 /**
  * Show the error
  */
-line_t syntax_error(const char *error, size_t index)
+line_t print_error(const char * restrict error, size_t index)
 {
   if (current_line) {
-    printf("Error at line %d: %s\n%d %s\n", current_line, error, current_line, &codemem[index]);
+    print_string("Error at line ");
+    print_unsigned(current_line);
+    print_string(": ");
+    print_string(error);
+    print_string("\n");
+    print_unsigned(current_line);
+    print_string(" ");
+    print_string(&codemem[index]);
+    print_string("\n");
   } else {
-    printf("Error: %s\n%s\n", error, &codemem[index]);
+    print_string("Error: ");
+    print_string(error);
+    print_string("\n");
+    print_string(&codemem[index]);
+    print_string("\n");
   }
   return MAX_LINENUM;
 }
@@ -802,7 +865,7 @@ line_t execute_command(size_t index)
 
   // Execute "CLEAR"
   else if (command_compare(kwd_clear, index)) {
-    printf("\033[2J\033[H");
+    print_string("\033[2J\033[H");
   }
 
   // Execute "END"
@@ -812,27 +875,61 @@ line_t execute_command(size_t index)
 
   // Execute "RUN"
   else if (command_compare(kwd_run, index)) {
-    handle_run();
+    if (!current_line)
+      handle_run();
+    else
+      print_error("Command unavailable during run mode", index);
   }
 
   // Execute "LIST"
   else if (command_compare(kwd_list, index)) {
-    handle_list();
+    if (!current_line)
+      handle_list();
+    else
+      print_error("Command unavailable during run mode", index);
   }
 
   // Execute "NEW"
   else if (command_compare(kwd_new, index)) {
-    handle_new();
+    if (!current_line)
+      handle_new();
+    else
+      print_error("Command unavailable during run mode", index);
   }
 
   // Execute "MEMORY"
   else if (command_compare(kwd_memory, index)) {
-    printf("%d bytes free\n", (int)(CODE_MEMORY_SIZE - codemem_end));
+    if (!current_line) {
+      print_signed((int)(CODE_MEMORY_SIZE - codemem_end));
+      print_string(" bytes free\n");
+    } else {
+      print_error("Command unavailable during run mode", index);
+    }
   }
+
+  #if FILE_IO == 1
+  // Execute "SAVE"
+  else if (command_compare(kwd_save, index)) {
+    if (!current_line) {
+      handle_save(index);
+    } else {
+      print_error("Command unavailable during run mode", index);
+    }
+  }
+
+  // Execute "LOAD"
+  else if (command_compare(kwd_load, index)) {
+    if (!current_line) {
+      handle_load(index);
+    } else {
+      print_error("Command unavailable during run mode", index);
+    }
+  }
+  #endif
 
   // If command wasn't recognized show an error and return
   else {
-    return syntax_error("Unknown command", index);
+    return print_error("Unknown command", index);
   }
 
   return (error) ? MAX_LINENUM : 0;
@@ -864,7 +961,7 @@ line_t handle_print(size_t index)
       size_t len;
       for (len = 0; codemem[index + len + 1] != '"'; len++)
         if (codemem[index + len + 1] == '\0')
-          return syntax_error("Unclosed string", initial_index);
+          return print_error("Unclosed string", initial_index);
 
       // Print the string
       for (size_t i = 1; i <= len; i++)
@@ -895,7 +992,7 @@ line_t handle_print(size_t index)
 
       // Print the expression result
       // NOLINTNEXTLINE
-      printf("%ld", (int64_t)expr_value);
+      print_signed((int64_t)expr_value);
 
       // Continue while there are more expressions or strings
       index += length;
@@ -909,11 +1006,11 @@ line_t handle_print(size_t index)
 
   // Show an error if there's something after the string
   if (codemem[index] != '\0')
-    return syntax_error("Invalid data after print statement", initial_index);
+    return print_error("Invalid data after print statement", initial_index);
 
   // Print the LF and return
   if (linefeed)
-    printf("\n");
+    print_string("\n");
   return 0;
 }
 
@@ -927,14 +1024,14 @@ line_t handle_let(size_t index)
   // Get the target variable
   skip_spaces(&index);
   if (!isalpha(codemem[index]))
-    return syntax_error("Invalid target variable", initial_index);
+    return print_error("Invalid target variable", initial_index);
   const size_t variable = toupper(codemem[index]) - 'A';
 
   // Check for the equal symbol sanity
   index++;
   skip_spaces(&index);
   if (codemem[index] != '=')
-    return syntax_error("Expected '=' token after the target variable", initial_index);
+    return print_error("Expected '=' token after the target variable", initial_index);
 
   // Get the expression length
   index++;
@@ -964,7 +1061,10 @@ void handle_list(void)
       printf("index: %zu, linelen: %zu, linenum: %d # %s\n",
         index, linelen, linenum, &codemem[index + sizeof(line_t)]);
     #else
-      printf("%d %s\n", linenum, &codemem[index + sizeof(line_t)]);
+      print_unsigned(linenum);
+      print_string(" ");
+      print_string(&codemem[index + sizeof(line_t)]);
+      print_string("\n");
     #endif
     index += linelen + sizeof(line_t) + 1;
   }
@@ -981,7 +1081,7 @@ line_t handle_goto(size_t index)
   skip_spaces(&index);
   const line_t linenum = get_literal_number(index, &error);
   if (linenum <= 0 || linenum >= MAX_LINENUM || error)
-    return syntax_error("Invalid target line number", initial_index);
+    return print_error("Invalid target line number", initial_index);
   return linenum;
 }
 
@@ -1004,7 +1104,7 @@ line_t handle_if(size_t index)
     length++;
   }
   if (codemem[index + length] == '\0')
-    return syntax_error("Expected 2 expressions for comparison", initial_index);
+    return print_error("Expected 2 expressions for comparison", initial_index);
   var_t expr_left_value = expr_solve(index, length, &error);
   if (error)
     return MAX_LINENUM;
@@ -1027,14 +1127,14 @@ line_t handle_if(size_t index)
     compare_operation = CO_EQUAL;
     index++;
   } else {
-    return syntax_error("Invalid compare operation", initial_index);
+    return print_error("Invalid compare operation", initial_index);
   }
 
   // Get the second expression
   length = 0;
   while (1) {
     if (codemem[index + length] == '\0')
-      return syntax_error("Expected second expression followed by 'THEN' token", initial_index);
+      return print_error("Expected second expression followed by 'THEN' token", initial_index);
     if (command_compare(kwd_then, index + length))
       break;
     length++;
@@ -1083,16 +1183,16 @@ line_t handle_input(size_t index)
     index++;
 
   if (codemem[index] == '\0')
-    return syntax_error("Expected target variable", initial_index);
+    return print_error("Expected target variable", initial_index);
   if (!isalpha(codemem[index]) || codemem[index + 1] != '\0')
-    return syntax_error("Expected target variable", initial_index);
+    return print_error("Expected target variable", initial_index);
 
   const size_t variable = toupper(codemem[index]) - 'A';
 
   // Get and exaluate the expression
   size_t expr_length = 0;
   while (1) {
-    const char chr = getchar();
+    const char chr = GETCHAR();
 
     if (chr == '\b') {
       if (expr_length)
@@ -1187,21 +1287,113 @@ line_t handle_peek(size_t index)
 }
 #endif
 
+#if FILE_IO == 1
+/**
+ * Save the memory contents to a file
+ */
+void handle_save(size_t index)
+{
+  // Get the file name
+  const size_t initial_index = index;
+  index += strlen(kwd_save);
+  skip_spaces(&index);
+
+  // Check if the code exists
+  if (codemem_end == 0) {
+    print_error("No code to be saved", initial_index);
+    return;
+  }
+
+  // Open a file
+  const char *filename = &codemem[index];
+  FILE *file = fopen(filename, "w");
+  if (ferror(file)) {
+    print_error("Failed to open file", initial_index);
+    fclose(file);
+    return;
+  }
+
+  // Write to the file
+  size_t mem_index = sizeof(line_t);
+  while (mem_index < codemem_end) {
+    fprintf(file, "%d %s\n", *(line_t*)(&codemem[mem_index - sizeof(line_t)]), &codemem[mem_index]);
+    mem_index += strlen(&codemem[mem_index]) + sizeof(line_t) + 1;
+  }
+
+  // Close the file
+  fclose(file);
+}
+
+/**
+ * Load the memory contents from a file
+ */
+void handle_load(size_t index)
+{
+  const size_t initial_index = index;
+  index += strlen(kwd_load);
+  skip_spaces(&index);
+
+  // Get the file contents
+  const char *filename = &codemem[index];
+  FILE *file = fopen(filename, "r");
+  if (ferror(file)) {
+    print_error("Failed to open file", initial_index);
+    fclose(file);
+    return;
+  }
+  fseek(file, 0, SEEK_END);
+  const size_t length = ftell(file) + 1;
+  char *file_contents = malloc(length * sizeof(char));
+  fseek(file, 0, SEEK_SET);
+  fread(file_contents, sizeof(char), length, file);
+  fclose(file);
+
+  // Load the lines to the memory in a hacky way (copy to new line buffer and execute)
+  size_t file_index = 0;
+  while (file_index < length) {
+
+    // Get the line length
+    size_t line_length = 0;
+    while (line_length < length && file_contents[file_index + line_length] != '\n')
+      line_length++;
+
+    // Skip if line doesn't seem to be valid
+    if (!isdigit(file_contents[file_index])) {
+      file_index += line_length + 1;
+      continue;
+    }
+
+    // Copy the line and set the pointers
+    newline_end = newline_ind + line_length;
+    for (size_t i = 0; i < line_length; i++)
+      codemem[newline_ind + i] = file_contents[file_index + i];
+    codemem[newline_ind + line_length] = '\0';
+
+    // Execute the line
+    execute_newline();
+    file_index += line_length + 1;
+  }
+
+  // Remember to dealloc your pointers
+  free(file_contents);
+}
+#endif
+
 /**
  * Ask for confirmation and if confirmed clear the memory
  */
 void handle_new(void)
 {
-  printf("Really want to do do this? [Y/n]:");
-  if (toupper(getchar()) == 'Y') {
-    printf("\nI did as you said\n");
+  print_string("Really want to do do this? [Y/n]:");
+  if (toupper(GETCHAR()) == 'Y') {
+    print_string("\nI did as you said\n");
     for (int i = 0; i < CODE_MEMORY_SIZE; i++)
       codemem[i] = '\0';
     codemem_end = 0;
     newline_ind = 0;
     newline_end = 0;
   } else {
-    printf("\n");
+    print_string("\n");
   }
 }
 
@@ -1212,7 +1404,7 @@ void handle_run(void)
 {
   // Skip if no code exists
   if (!codemem_end) {
-    printf("No code to run, go write some\n");
+    print_string("No code to run, go write some\n");
     return;
   }
 
@@ -1240,7 +1432,9 @@ void handle_run(void)
     else {
       index = get_line_index(nextline);
       if (index == codemem_end) {
-        printf("Line %d not found.\n", nextline);
+        print_string("Line ");
+        print_unsigned(nextline);
+        print_string(" not found.\n");
         break;
       }
     }
@@ -1280,7 +1474,7 @@ void execute_newline(void)
  */
 bool handle_shell(void)
 {
-  const char chr = getchar();
+  const char chr = GETCHAR();
 
   // If it was backspace delete the character from the line
   if (chr == '\b') {
@@ -1307,6 +1501,9 @@ bool handle_shell(void)
 
 int main(void)
 {
+  // Initialize the IO
+  IO_INIT();
+
   // Preset the static variables
   codemem_end = 0;
   newline_ind = 0;
@@ -1318,8 +1515,11 @@ int main(void)
     variables[i] = 0;
 
   // Show the prompt
-  printf("\nTinyBasic by EPSILON0\nExpression limit: %d tokens\nCode memory: %d bytes\n\n> ",
-    EXPR_MAX_TOKENS, CODE_MEMORY_SIZE);
+  print_string("\nTinyBasic by EPSILON0\nExpression limit: ");
+  print_unsigned(EXPR_MAX_TOKENS);
+  print_string(" tokens\nCode memory: ");
+  print_unsigned(CODE_MEMORY_SIZE);
+  print_string(" bytes\n\n> ");
 
   // Main loop
   while (1) {
@@ -1327,9 +1527,8 @@ int main(void)
 
     if (execute) {
       execute_newline();
-      printf("> ");
+      print_string("> ");
     }
-
   }
 
   return 0;
