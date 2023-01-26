@@ -62,45 +62,99 @@ Language interpreter contains a simple expression solver supporting basic intege
 ## Configuration
 
 ##### Defines
+- `NEWLINE` - Character that will be interpreted as a new line.
+- `BACKSPACE` - Character that will be interpreted as a backspace.
 - `CODE_MEMORY_SIZE` - Size of the program memory.
 - `EXPR_MAX_TOKENS` - Size of expression solver buffer.
 - `MAX_LINUENUM` - Maximum valid line number (not including MAX_LINENUM).
 - `POKE_PEEK` - Enable `POKE` and `PEEK` commands.
 - `FILE_IO` - Enable `SAVE` and `LOAD` commands.
 - `IO_KILL` - Enable breaking the execution if new characters were received during execution.
+- `LOOPBACK` - Enable cosole loopback (input characters will be sent back).
 
 ##### Data types
 - `line_t` - Format in which line number is stored.
 - `var_t` - Format in which variables are stored.
+- `uvar_t` - Unisgned version of the format in which variables are stored.
 - `peek_t` - Format in which `POKE` and `PEEK` accesses memory.
 
 ##### IO Defines
+In the definitions `x` is the pointer to the data that has to be sent, received or checked.
 - `IO_INIT` - Called at the start of `main()` starts up the IO device.
 - `PUTCHAR(x)` - Prints the `x` character to the IO device.
-- `GETCHAR()` - Return character from the IO device.
-- `IO_CHECK()` - Returns if there are any new characters in IO (used for IO_KILL).
+- `GETCHAR(x)` - Return character from the IO device.
+- `IO_CHECK(x)` - Returns if there are any new characters in IO (used for IO_KILL).
 
 #### Example configs
 
 ###### PC
 ```c
+#define NEWLINE           '\n'
+#define BACKSPACE         '\b'
 #define CODE_MEMORY_SIZE  8192
 #define EXPR_MAX_TOKENS   64
 #define MAX_LINENUM       10000
 #define POKE_PEEK         0
 #define FILE_IO           1
 #define IO_KILL           0
+#define OUTPUT_CRLF       0
+#define SHORT_STRING      0
+#define LOOPBACK          0
 
 typedef uint16_t          line_t;
 typedef int32_t           var_t;
+typedef uint32_t          uvar_t;
 typedef size_t            peek_t;
 
 #define IO_INIT()         ((void)0)
-#define PUTCHAR(x)        (putchar(x))
-#define GETCHAR()         (getchar())
-#define IO_CHECK()        (false)
+#define PUTCHAR(x)        (putchar(*x))
+#define GETCHAR(x)        (*x = getchar())
+#define IO_CHECK(x)       (*x = false)
 ```
 
+###### AVR (ATmega328)
+```c
+#define NEWLINE           '\n'
+#define BACKSPACE         '\b'
+#define CODE_MEMORY_SIZE  512
+#define EXPR_MAX_TOKENS   16
+#define MAX_LINENUM       10000
+#define POKE_PEEK         1
+#define FILE_IO           0
+#define IO_KILL           1
+#define CRLF              1
+#define SHORT_STRING      1
+#define LOOPBACK          0
+
+typedef uint16_t          line_t;
+typedef int32_t           var_t;
+typedef uint32_t          uvar_t;
+typedef size_t            peek_t;
+
+#define F_CPU 16000000UL
+#define __AVR_ATmega328__
+#include <avr/io.h>
+
+#define IO_INIT() {              \
+  UBRR0 = F_CPU / 8 / 9600 - 1;  \
+  UCSR0A = 1<<U2X0;              \
+  UCSR0B = 1<<TXEN0 | 1<<RXEN0;  \
+}
+
+#define PUTCHAR(x) {               \
+  while (!(UCSR0A & (1<<UDRE0)));  \
+  UDR0 = *x;                       \
+}
+
+#define GETCHAR(x) {              \
+  while (!(UCSR0A & (1<<RXC0)));  \
+  *x = UDR0;                      \
+}
+
+#define IO_CHECK(x) {           \
+  *x = !!(UCSR0A & (1<<RXC0));  \
+}
+```
 ---
 
 ## Example programs
