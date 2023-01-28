@@ -57,6 +57,7 @@ const char *kwd_list   = "LIST";
 const char *kwd_memory = "MEMORY";
 const char *kwd_new    = "NEW";
 const char *kwd_print  = "PRINT";
+const char *kwd_char   = "CHAR";
 const char *kwd_rem    = "REM";
 const char *kwd_run    = "RUN";
 const char *kwd_then   = "THEN";
@@ -96,6 +97,8 @@ const char *str_err_run_mode        = "Not in RUN";
 const char *str_err_unknown         = "What?";
 const char *str_err_string          = "Str";
 const char *str_err_str_garbage     = "What?";
+const char *str_err_char_variable   = "What?";
+const char *str_err_char_garbage    = "What?";
 const char *str_err_let_target      = "What?";
 const char *str_err_let_sanity      = "What?";
 const char *str_err_goto_target     = "What?";
@@ -131,6 +134,8 @@ const char *str_err_run_mode        = "Command unavailable during run mode";
 const char *str_err_unknown         = "Unknown command";
 const char *str_err_string          = "Unclosed string";
 const char *str_err_str_garbage     = "Invalid data after print statement";
+const char *str_err_char_variable   = "Expected variable after the 'CHAR' keyword";
+const char *str_err_char_garbage    = "Found garbage after variable";
 const char *str_err_let_target      = "Invalid target variable";
 const char *str_err_let_sanity      = "Expected '=' token after the target variable";
 const char *str_err_goto_target     = "Invalid target line number";
@@ -240,6 +245,7 @@ line_t print_error(const char * error, size_t index);
 line_t execute_command(size_t index);
 line_t handle_let(size_t index);
 line_t handle_print(size_t index);
+line_t handle_char(size_t index);
 line_t handle_if(size_t index);
 line_t handle_goto(size_t index);
 line_t handle_input(size_t index);
@@ -931,6 +937,11 @@ line_t execute_command(size_t index)
     return handle_print(index);
   }
 
+  // Execute "CHAR"
+  else if (command_compare(kwd_char, index)) {
+    return handle_char(index);
+  }
+
   // Execute "GOTO"
   else if (command_compare(kwd_goto, index)) {
     return handle_goto(index);
@@ -1122,6 +1133,31 @@ line_t handle_print(size_t index)
   // Print the LF and return
   if (linefeed)
     print_string(str_lf);
+  return 0;
+}
+
+/**
+ * Print a single character from a given variable
+ */
+line_t handle_char(size_t index)
+{
+  const size_t initial_index = index;
+
+  // Get to the target variable
+  index += strlen(kwd_char);
+  skip_spaces(&index);
+
+  // Check the variable sanity
+  if (!isalpha(codemem[index]))
+    return print_error(str_err_char_variable, initial_index);
+
+  // Check for the garbage after variable
+  if (codemem[index + 1] != '\0')
+    return print_error(str_err_char_garbage, initial_index);
+
+  // Print the character
+  char chr = (char)variables[toupper(codemem[index]) - 'A'];
+  PUTCHAR(&chr);
   return 0;
 }
 

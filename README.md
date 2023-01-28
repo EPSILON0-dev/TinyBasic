@@ -177,3 +177,46 @@ typedef size_t            peek_t;
 1050 PRINT A
 1060 GOTO 60
 ```
+
+###### Base Converter
+```basic
+10 REM Base Converter
+20 PRINT "Enter a value: ":
+30 INPUT A
+40 PRINT ""
+50 PRINT "Decimal:       " : A
+60 B = A
+70 C = 32
+80 PRINT "Binary:        ":
+90 IF B & 0x80000000 <> 0 THEN PRINT "1":
+100 IF B & 0x80000000  = 0 THEN PRINT "0":
+110 B = B * 2
+120 C = C - 1
+130 IF C > 0 THEN GOTO 90
+140 PRINT ""
+150 B = A
+160 C = 8
+170 PRINT "Hexadecimal:   ":
+180 D = (B / 268435456 & 0xF) + 0x30
+190 IF D > 0x39 THEN D = D + 0x7
+:q
+:wq
+200 CHAR D
+210 B = B * 16
+220 C = C - 1
+230 IF C > 0 THEN GOTO 180
+240 PRINT ""
+250 B = A
+260 C = 10
+270 PRINT "Octal:         ":
+280 D = (B / 1073741824 & 0x3) + 0x30
+290 CHAR D
+300 D = (B / 134217728 & 0x7) + 0x30
+310 CHAR D
+320 B = B * 8
+330 C = C - 1
+340 IF C > 0 THEN GOTO 300
+350 PRINT ""
+360 PRINT ""
+```
+
