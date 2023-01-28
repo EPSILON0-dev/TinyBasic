@@ -15,7 +15,7 @@
 /****************************************************************************/
 // Start of the config section
 
-#define NEWLINE           '\r'
+#define NEWLINE           '\n'
 #define BACKSPACE         '\b'
 #define BACKSPACE_STR     "\b \b"
 #define CODE_MEMORY_SIZE  8192
