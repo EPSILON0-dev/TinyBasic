@@ -17,6 +17,7 @@ Keywords and variable names are case-insensitive.
 ###### BASIC commands
 - `LET <variable> = <expression>` <br>Assigns the result of an expression to the given variable, `LET` keyword isn't necessary and format `<var> = <expr>` will also be understood.
 - `PRINT <"string"> : <expression>` <br>Prints out strings and expression results to the console, `:` token can be used as a separator to for example put a value after a string, leaving the separator token at the end of the line disables the linefeed that would have been sent at the end of the line.
+- `CHAR <variable>` <br>Print a character in the given variable (equivalent to C's `putchar()`)
 - `GOTO <line number>` <br>This command jumps to the given line number.
 - `IF <expression> <comparison> <expression> THEN <command>` <br>Executes the command after the `THEN` keyword if the comparison result is true, available comparisons are the following: equal (`=`), not equal (`<>`), lower than (`<`) and greater than (`>`)
 - `INPUT <variable>` <br>Gets the expression from the console and put it into the specified variable.
@@ -199,8 +200,6 @@ typedef size_t            peek_t;
 170 PRINT "Hexadecimal:   ":
 180 D = (B / 268435456 & 0xF) + 0x30
 190 IF D > 0x39 THEN D = D + 0x7
-:q
-:wq
 200 CHAR D
 210 B = B * 16
 220 C = C - 1
