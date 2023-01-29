@@ -1,6 +1,6 @@
 # TinyBasic
 
-## This is a simple TinyBASIC interpreter designed for use on microcontrollers.
+## This is a simple TinyBASIC interpreter designed for use on microcontrollers
 
 Language supports the most basic commands like `LET`, `PRINT`, `GOTO`, `IF` and `INPUT`, 26 single-letter variables are available to the programmer, despite these limitations the language is Turing complete allowing to create (almost) any simple program.
 
@@ -12,9 +12,12 @@ In case infinite loop occures there is a way to kill the execution by sending an
 
 ---
 
-## List of the supported commands:
+## List of the supported commands
+
 Keywords and variable names are case-insensitive.
+
 ###### BASIC commands
+
 - `LET <variable> = <expression>` <br>Assigns the result of an expression to the given variable, `LET` keyword isn't necessary and format `<var> = <expr>` will also be understood.
 - `PRINT <"string"> : <expression>` <br>Prints out strings and expression results to the console, `:` token can be used as a separator to for example put a value after a string, leaving the separator token at the end of the line disables the linefeed that would have been sent at the end of the line.
 - `CHAR <variable>` <br>Print a character in the given variable (equivalent to C's `putchar()`)
@@ -27,21 +30,28 @@ Keywords and variable names are case-insensitive.
 - `MEMORY` <br>Shows how much code memory is left.
 - `RUN` <br>Starts the program from the first line.
 - `NEW` <br>Clears the code memory after confirmation.
+
 ###### POKE_PEEK commands
+
 - `POKE <address expression>, <value expression>` <br>Sets the memory at the given address to the given value
 - `PEEK <address expression>, <variable>` <br>Gets the memory from the given address and stores it in the given variable.
 - `POKEB <address expression>, <value expression>` <br>Same as `POKE` but only accesses `uint8_t` instead of `peek_t`
 - `PEEKB <address expression>, <variable>` <br>Same as `POKE` but only accesses `uint8_t` instead of `peek_t`
+
 ###### FILE_IO commands
+
 - `SAVE <filename>` <br>Saves memory contents.
 - `LOAD <filename>` <br>Loads memory contents.
 
 ---
 
 ## Expression solving
+
 ##### Supported operations
+
 Language interpreter contains a simple expression solver supporting basic integer arythmetic operations like: add (`+`), subtract (`-`), multiply (`*`), divide (`/`) and remainder (`%`). Basic logic functions are also supported: AND (`&`), OR (`|`), XOR (`^`) and NOT (`!`).
 ##### Operation precedence
+
 | Precedence |          Operation         | Operator(s) |
 |:----------:|:--------------------------:|:-----------:|
 |      1     | Subexpressions in brackets | ()          |
@@ -49,7 +59,9 @@ Language interpreter contains a simple expression solver supporting basic intege
 |      3     | Important arythmetics      | *, /, %     |
 |      4     | Low importance arythmetics | +, -        |
 |      5     | Logic operations           | &, \|, ^    |
+
 ##### Literal formats
+
 |     Name    |                   Format                  |               Examples              |
 |:-----------:|:-----------------------------------------:|:-----------------------------------:|
 | Variable    | Single letter variable name               | `A`, `B`, `c`, `z`, `Z`             |
@@ -63,6 +75,7 @@ Language interpreter contains a simple expression solver supporting basic intege
 ## Configuration
 
 ##### Defines
+
 - `NEWLINE` - Character that will be interpreted as a new line.
 - `BACKSPACE` - Character that will be interpreted as a backspace.
 - `CODE_MEMORY_SIZE` - Size of the program memory.
@@ -74,13 +87,16 @@ Language interpreter contains a simple expression solver supporting basic intege
 - `LOOPBACK` - Enable cosole loopback (input characters will be sent back).
 
 ##### Data types
+
 - `line_t` - Format in which line number is stored.
 - `var_t` - Format in which variables are stored.
 - `uvar_t` - Unisgned version of the format in which variables are stored.
 - `peek_t` - Format in which `POKE` and `PEEK` accesses memory.
 
 ##### IO Defines
+
 In the definitions `x` is the pointer to the data that has to be sent, received or checked.
+
 - `IO_INIT` - Called at the start of `main()` starts up the IO device.
 - `PUTCHAR(x)` - Prints the `x` character to the IO device.
 - `GETCHAR(x)` - Return character from the IO device.
@@ -89,6 +105,7 @@ In the definitions `x` is the pointer to the data that has to be sent, received 
 #### Example configs
 
 ###### PC
+
 ```c
 #define NEWLINE           '\n'
 #define BACKSPACE         '\b'
@@ -114,6 +131,7 @@ typedef size_t            peek_t;
 ```
 
 ###### AVR (ATmega328)
+
 ```c
 #define NEWLINE           '\n'
 #define BACKSPACE         '\b'
@@ -156,30 +174,47 @@ typedef size_t            peek_t;
   *x = !!(UCSR0A & (1<<RXC0));  \
 }
 ```
+
 ---
 
 ## Example programs
 
 ###### Primes generator
+
 ```basic
 10 REM Primes generator, get all primes up to max prime
 20 PRINT "Enter max prime: ":
 30 INPUT C
 40 A = 2
-50 GOTO 1000
+50 GOTO 90
 60 A = A + 1
 70 IF A < C + 1 THEN GOTO 50
 80 END
-1000 REM Print number if it is prime
-1010 B = 2
-1020 IF A % B = 0 THEN GOTO 60
-1030 B = B + 1
-1040 IF B < A / 2 THEN GOTO 1020
-1050 PRINT A
-1060 GOTO 60
+90 B = 2
+100 IF A % B = 0 THEN GOTO 60
+110 B = B + 1
+120 IF B < A / 2 THEN GOTO 100
+130 PRINT A
+140 GOTO 60
+```
+
+###### Fibonacci Sequence
+
+```basic
+10 REM Fibonacci Sequence
+20 A = 1
+30 B = 1
+40 C = 20
+50 PRINT A
+60 D = A
+70 A = A + B
+80 B = D
+90 C = C - 1
+100 IF C > 0 THEN GOTO 50
 ```
 
 ###### Base Converter
+
 ```basic
 10 REM Base Converter
 20 PRINT "Enter a value: ":
@@ -218,4 +253,3 @@ typedef size_t            peek_t;
 350 PRINT ""
 360 PRINT ""
 ```
-

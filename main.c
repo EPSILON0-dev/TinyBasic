@@ -221,11 +221,13 @@ static inline void skip_spaces(size_t *index);
 var_t get_literal_number(size_t index, bool *error);
 
 // Code memory handling
+static inline line_t load_line_t(size_t index);
+static inline void store_line_t(size_t index, line_t linenum);
 line_t get_line_num(size_t index);
 size_t get_line_index(line_t linenum);
 size_t get_line_next_index(line_t linenum);
-void codemem_shift_left(size_t index, size_t length, size_t amount);
-void codemem_shift_right(size_t index, size_t length, size_t amount);
+static inline void codemem_shift_left(size_t index, size_t length, size_t amount);
+static inline void codemem_shift_right(size_t index, size_t length, size_t amount);
 void insert_line(size_t ind);
 void store_newline(size_t ind);
 
@@ -389,6 +391,30 @@ var_t get_literal_number(size_t index, bool *error)
 /****************************************************************************/
 
 /**
+ * Load the line number from possibly unaligned address
+ */
+static inline line_t load_line_t(size_t index)
+{
+  line_t result = 0;
+  for (size_t i = sizeof(line_t); i; i--) {
+    result <<= 8;
+    result |= *(uint8_t*)(&codemem[index + i - 1]);
+  }
+  return result;
+}
+
+/**
+ * Store the line number to possibly unaligned address
+ */
+static inline void store_line_t(size_t index, line_t linenum)
+{
+  for (size_t i = 0; i < sizeof(line_t); i++) {
+    codemem[index + i] = (char)(linenum & 0xFF);
+    linenum >>= 8;
+  }
+}
+
+/**
  * Get the line number from the codemem at the given index
  */
 line_t get_line_num(size_t index)
@@ -407,7 +433,7 @@ size_t get_line_index(line_t linenum)
 {
   size_t index = 0;
   while (index < codemem_end) {
-    if (*(line_t*)(&codemem[index]) == linenum)
+    if (load_line_t(index) == linenum)
       break;
     index += sizeof(line_t);
     while (codemem[index++] != '\0') {
@@ -426,7 +452,7 @@ size_t get_potential_line_index(line_t linenum)
 {
   size_t index = 0;
   while (index < codemem_end) {
-    if (*(line_t*)(&codemem[index]) >= linenum)
+    if (load_line_t(index) >= linenum)
       break;
     index += sizeof(line_t);
     while (codemem[index++] != '\0') {
@@ -441,7 +467,7 @@ size_t get_potential_line_index(line_t linenum)
 /**
  * Shift the memory contents amount bytes left
  */
-void codemem_shift_left(size_t index, size_t length, size_t amount)
+static inline void codemem_shift_left(size_t index, size_t length, size_t amount)
 {
   for (size_t i = 0; i < length; i++)
     codemem[index - amount + i] = codemem[index + i];
@@ -450,7 +476,7 @@ void codemem_shift_left(size_t index, size_t length, size_t amount)
 /**
  * Shift the memory contents amount bytes right
  */
-void codemem_shift_right(size_t index, size_t length, size_t amount)
+static inline void codemem_shift_right(size_t index, size_t length, size_t amount)
 {
   while (length--)
     codemem[index + amount + length] = codemem[index + length];
@@ -515,7 +541,7 @@ void store_newline(size_t ind)
     codemem_end += shift_amount;
 
     // Copy the line into it's new place
-    *(line_t*)(&codemem[lineind]) = linenum;
+    store_line_t(lineind, linenum);
     codemem[lineind + newlinelen + sizeof(line_t)] = '\0';
     for (size_t i = 0; i < newlinelen; i++)
       codemem[lineind + sizeof(line_t) + i] = codemem[CODE_MEMORY_SIZE - newlinelen + i];
@@ -1202,7 +1228,7 @@ void handle_list(void)
 {
   size_t index = 0;
   while (index < codemem_end) {
-    const line_t linenum = *(line_t*)(&codemem[index]);
+    const line_t linenum = load_line_t(index);
     const size_t linelen = strlen(&codemem[index + sizeof(line_t)]);
     #if LIST_DEBUG == 1
       printf("index: %zu, linelen: %zu, linenum: %d # %s\n",
@@ -1479,7 +1505,7 @@ void handle_save(size_t index)
   // Write to the file
   size_t mem_index = sizeof(line_t);
   while (mem_index < codemem_end) {
-    fprintf(file, "%d %s\n", *(line_t*)(&codemem[mem_index - sizeof(line_t)]), &codemem[mem_index]);
+    fprintf(file, "%d %s\n", load_line_t(mem_index - sizeof(line_t)), &codemem[mem_index]);
     mem_index += strlen(&codemem[mem_index]) + sizeof(line_t) + 1;
   }
 
@@ -1506,7 +1532,7 @@ void handle_load(size_t index)
   }
   fseek(file, 0, SEEK_END);
   const size_t length = ftell(file) + 1;
-  char *file_contents = malloc(length * sizeof(char));
+  char *file_contents = (char*)malloc(length * sizeof(char));
   fseek(file, 0, SEEK_SET);
   fread(file_contents, sizeof(char), length, file);
   fclose(file);
@@ -1577,7 +1603,7 @@ void handle_run(void)
   }
 
   size_t index = sizeof(line_t);
-  current_line = *(line_t*)(&codemem[0]);
+  current_line = load_line_t(0);
   while (1) {
 
     #if IO_KILL == 1
