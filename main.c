@@ -1744,6 +1744,4 @@ int main(void)
       print_string(str_shell_prompt);
     }
   }
-
-  return 0;
 }
