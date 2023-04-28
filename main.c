@@ -242,8 +242,8 @@ bool expr_reduce_check(size_t index);
 void expr_erase(size_t index, size_t length);
 
 // Command execution utilities
-bool command_compare(const char * command, size_t index);
-line_t print_error(const char * error, size_t index);
+bool command_compare(const char *command, size_t index);
+line_t print_error(const char *error, size_t index);
 line_t execute_command(size_t index);
 line_t handle_let(size_t index);
 line_t handle_print(size_t index);
@@ -907,7 +907,7 @@ void expr_erase(size_t index, size_t length)
 /**
  * Compare the memory contents to the given command
  */
-bool command_compare(const char * command, size_t index)
+bool command_compare(const char *command, size_t index)
 {
   size_t i;
   for (i = 0; command[i]; i++)
@@ -919,7 +919,7 @@ bool command_compare(const char * command, size_t index)
 /**
  * Show the error
  */
-line_t print_error(const char * error, size_t index)
+line_t print_error(const char *error, size_t index)
 {
   if (current_line) {
     print_string(str_err_at_line1);

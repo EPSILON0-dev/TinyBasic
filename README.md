@@ -175,6 +175,35 @@ typedef size_t            peek_t;
 }
 ```
 
+###### Arduino (any, tested on ESP8266)
+
+In case of different board memory size might need to be adjusted and in case of some boards (ESP8266 for example), `int main(void)` might need to be replaced with `void setup(void)` and `void loop(void)` might need to get added.
+
+```c
+#define NEWLINE           '\r'
+#define BACKSPACE         '\b'
+#define BACKSPACE_STR     "\b \b"
+#define CODE_MEMORY_SIZE  512
+#define EXPR_MAX_TOKENS   16
+#define MAX_LINENUM       10000
+#define POKE_PEEK         0
+#define FILE_IO           0
+#define IO_KILL           1
+#define OUTPUT_CRLF       1
+#define SHORT_STRING      1
+#define LOOPBACK          1
+
+typedef uint16_t          line_t;
+typedef int32_t           var_t;
+typedef uint32_t          uvar_t;
+typedef size_t            peek_t;
+
+#define IO_INIT()         (Serial.begin(115200))
+#define PUTCHAR(x)        (Serial.write(*x))
+#define GETCHAR(x)        { while (!Serial.available()); *x = Serial.read(); }
+#define IO_CHECK(x)       (*x = Serial.available())
+```
+
 ---
 
 ## Example programs
